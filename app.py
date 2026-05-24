@@ -36,7 +36,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🕵️‍♂️ API 키 설정 (반드시 실제 키로 변경하세요!)
-api_key = "a632cce2ef4ce525623e1348ef4502304284bf10dc238e36efe7925a3c59323b"
+api_key = "여기에 API"
 
 # ===== 세션 상태 초기화 =====
 defaults = {
