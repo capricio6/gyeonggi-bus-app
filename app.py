@@ -11,6 +11,15 @@ import pandas as pd
 import os
 import glob
 
+# 🕵️‍♂️ 안전한 API 키 로드 (Streamlit Cloud / HF Spaces / Docker / 로컬 모두 호환)
+try:
+    api_key = st.secrets.get("API_KEY")
+except Exception:
+    api_key = None
+
+if not api_key:
+    api_key = os.environ.get("API_KEY", "a632cce2ef4ce525623e1348ef4502304284bf10dc238e36efe7925a3c59323b")
+
 # 📱 페이지 설정
 st.set_page_config(page_title="경기버스 실시간 정보", page_icon="🚌", layout="wide")
 
@@ -34,10 +43,6 @@ st.markdown("""
     [data-testid="stMetricLabel"] { font-size: 1.1rem !important; color: #424242 !important; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
-
-# 🕵️‍♂️ API 키 설정 (클라우드/로컬 호환)
-api_key = st.secrets.get("API_KEY", os.environ.get("API_KEY", "a632cce2ef4ce525623e1348ef4502304284bf10dc238e36efe7925a3c59323b
-"))
 
 # ===== 세션 상태 초기화 =====
 defaults = {
@@ -65,16 +70,11 @@ def load_gyeonggi_stops_csv():
         except UnicodeDecodeError:
             df = pd.read_csv(csv_file, header=None, dtype=str, on_bad_lines='skip', quotechar='"', encoding='cp949')
             
-        # 9개 컬럼 확인 후 인덱싱
         df = df[df.apply(lambda x: len(x) == 9, axis=1)].copy()
         if df.empty: return None, f"❌ 유효한 데이터가 없습니다."
             
         df.columns = ['raw_id', 'name', 'lat', 'lon', 'date', 'ars', 'city_code', 'city', 'admin']
-        
-        # 🟢 경기도 데이터만 필터링
         df = df[df['city'].str.contains("경기도", na=False)].copy()
-            
-        # 정류장 ID 숫자 추출, 좌표 변환
         df['stationId'] = df['raw_id'].astype(str).str.replace(r'\D', '', regex=True)
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
@@ -156,7 +156,6 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
 def simulate_eta_route_based(route_stops_list, bus_seq, target_seq, avg_speed_kmh=20, dwell_sec=20):
-    # 1. 버스 위치부터 목표 정류소까지 구간 필터링
     segment_stops = [s for s in route_stops_list if bus_seq <= int(s.get('stationSeq', 0)) <= target_seq]
     segment_stops.sort(key=lambda x: int(x.get('stationSeq', 0)))
     
@@ -167,7 +166,7 @@ def simulate_eta_route_based(route_stops_list, bus_seq, target_seq, avg_speed_km
             lon1 = float(segment_stops[i].get('x', segment_stops[i].get('stationX', 0)))
             lat2 = float(segment_stops[i+1].get('y', segment_stops[i+1].get('stationY', 0)))
             lon2 = float(segment_stops[i+1].get('x', segment_stops[i+1].get('stationX', 0)))
-            total_dist += haversine(lat1, lon1, lat2, lon2) * 1.3  # 도로 보정 계수
+            total_dist += haversine(lat1, lon1, lat2, lon2) * 1.3
             
     est_stops = max(1, len(segment_stops) - 1)
     travel_sec = total_dist / (avg_speed_kmh / 3.6)
@@ -178,7 +177,7 @@ def simulate_eta_route_based(route_stops_list, bus_seq, target_seq, avg_speed_km
     return max(0.5, round(total_min, 1)), round(total_dist), est_stops, segment_coords
 
 # ========================================
-# 🔍 도착 상태 분류 함수 (오류 방어 코드 포함)
+# 🔍 도착 상태 분류 함수
 # ========================================
 def arrival_class(minutes):
     try:
@@ -365,7 +364,6 @@ elif st.session_state.view_mode == 'search':
 elif st.session_state.view_mode == 'detail' and st.session_state.selected_stop:
     sel = st.session_state.selected_stop
     
-    # 🟢 60초 자동 갱신 (상세 화면에서만 작동)
     current_time = time.time()
     if current_time - st.session_state.last_update > 60:
         st.session_state.last_update = current_time
