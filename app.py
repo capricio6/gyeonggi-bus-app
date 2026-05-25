@@ -475,15 +475,17 @@ elif st.session_state.view_mode=='search':
 # ══════════════════════════════════════════
 elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
     sel = st.session_state.selected_stop
-    if time.time()-st.session_state.last_update>60:
-        st.session_state.last_update=time.time(); st.rerun()
 
-    # 뒤로 / 즐겨찾기
-    cb, cf = st.columns([4,1])
+    # 뒤로 / 새로고침 / 즐겨찾기
+    cb, cr, cf = st.columns([3, 1, 1])
     with cb:
         if st.button("← 목록으로", key="back"):
             st.session_state.view_mode='search'
             st.session_state.selected_bus_id=None
+            st.rerun()
+    with cr:
+        if st.button("🔄 새로고침", key="btn_refresh"):
+            st.session_state.last_update=time.time()
             st.rerun()
     with cf:
         is_fav = any(f['id']==sel['id'] for f in st.session_state.favorites)
