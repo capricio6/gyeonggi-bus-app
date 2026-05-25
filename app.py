@@ -148,6 +148,18 @@ hr { border: none !important; border-top: 1px solid rgba(167,139,250,0.15) !impo
     font-weight: 500 !important;
 }
 
+/* ── GPS 내위치 버튼 (아이콘 위, 텍스트 아래) ── */
+button[kind="secondary"][data-testid="baseButton-secondary"]:has-text {
+    text-align: center !important;
+}
+/* 내위치 버튼 중앙 정렬 + 세로 배치 강제 */
+.stButton:last-of-type > button {
+    text-align: center !important;
+    line-height: 1.4 !important;
+    padding: 10px 8px !important;
+    font-size: 0.82rem !important;
+}
+
 /* ── spinner ── */
 [data-testid="stSpinner"] p { color: #A78BFA !important; font-weight: 500 !important; }
 </style>
@@ -334,14 +346,39 @@ st.caption(f"🗄️ {db_status}")
 # ══════════════════════════════════════════
 #  검색 폼
 # ══════════════════════════════════════════
+# 내 위치 버튼 (검색창 아래 중앙)
+st.markdown("""
+<style>
+div[data-testid="stButton"]:has(button[aria-label="btn_gps"]) button,
+button[key="btn_gps"] {
+    background: linear-gradient(135deg,#A78BFA,#EC4899) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 20px !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    padding: 10px 28px !important;
+    box-shadow: 0 6px 20px rgba(167,139,250,0.4) !important;
+    width: auto !important;
+}
+</style>
+""", unsafe_allow_html=True)
+_gc1, _gc2, _gc3 = st.columns([2,1,2])
+with _gc2:
+    if st.button("📍  내 위치", key="btn_gps"):
+        with st.spinner("📍 위치 확인 중..."):
+            loc = get_geolocation()
+        if loc and 'coords' in loc:
+            run_search_around(loc['coords']['latitude'],loc['coords']['longitude'],"gps","내 위치")
+        else:
+            st.error("위치 권한을 허용해주세요.")
+
 with st.form(key='search_form'):
-    c1, c2, c3 = st.columns([5, 1, 1])
-    with c1:
+    fc1, fc2 = st.columns([5, 1])
+    with fc1:
         place = st.text_input("", key="search_input", placeholder="🔍  정류장명 또는 5자리 번호")
-    with c2:
+    with fc2:
         submit = st.form_submit_button("검색")
-    with c3:
-        gps_click = st.form_submit_button("📍 내 위치")
 
     if submit and st.session_state.search_input:
         with st.spinner("🔍 검색 중..."):
@@ -359,14 +396,6 @@ with st.form(key='search_form'):
                 st.session_state.view_mode='matches'
         else:
             st.session_state.view_mode='no_matches'
-
-    if gps_click:
-        with st.spinner("📍 위치 확인 중..."):
-            loc = get_geolocation()
-        if loc and 'coords' in loc:
-            run_search_around(loc['coords']['latitude'],loc['coords']['longitude'],"gps","내 위치")
-        else:
-            st.error("위치 권한을 허용해주세요.")
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
