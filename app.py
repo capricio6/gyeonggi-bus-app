@@ -170,7 +170,8 @@ defaults = {
     'stops': [], 'map_center': None, 'search_mode': None,
     'selected_stop': None, 'selected_bus_id': None,
     'favorites': [], 'last_place_name': "", 'view_mode': 'search',
-    'search_matches': None, 'last_update': time.time()
+    'search_matches': None, 'last_update': time.time(),
+    'map_cache': None, 'map_cache_route_id': None
 }
 for k, v in defaults.items():
     if k not in st.session_state: st.session_state[k] = v
@@ -476,15 +477,22 @@ elif st.session_state.view_mode=='search':
 elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
     sel = st.session_state.selected_stop
 
-    # 뒤로 / 새로고침 / 즐겨찾기
+    # 노선 목록 60초 자동 새로고침 (지도는 캐시 유지)
+    if time.time() - st.session_state.last_update > 60:
+        st.session_state.last_update = time.time()
+        st.rerun()
+
+    # 뒤로 / 지도 새로고침 / 즐겨찾기
     cb, cr, cf = st.columns([3, 1, 1])
     with cb:
         if st.button("← 목록으로", key="back"):
             st.session_state.view_mode='search'
             st.session_state.selected_bus_id=None
+            st.session_state.map_cache=None
             st.rerun()
     with cr:
-        if st.button("🔄 새로고침", key="btn_refresh"):
+        if st.button("🔄 지도 갱신", key="btn_refresh"):
+            st.session_state.map_cache=None   # 캐시 삭제 → 재조회
             st.session_state.last_update=time.time()
             st.rerun()
     with cf:
@@ -542,19 +550,36 @@ elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
                 if st.button(label, key=f"b{route_id}{i}", use_container_width=True):
                     st.session_state.selected_bus_id=route_id
 
-    # ── 지도 시뮬레이션 ──
+    # ── 지도 시뮬레이션 (캐시 기반 — 🔄 지도 갱신 버튼 눌렀을 때만 재조회) ──
     if st.session_state.selected_bus_id and arrivals:
         bus_info = next((b for b in arrivals if b.get('routeId')==st.session_state.selected_bus_id), None)
         if bus_info:
             route_name=bus_info.get('routeName','미상')
             route_id=bus_info.get('routeId','')
             st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown(f"""<div style="font-size:0.88rem;font-weight:700;color:#7C3AED;margin-bottom:12px;">
-              🗺️ {route_name}번 실시간 경로</div>""", unsafe_allow_html=True)
 
-            with st.spinner("경로 분석 중..."):
-                buses=fetch_bus_locations(route_id)
-                route_stops_list=fetch_route_stops(route_id)
+            # 버스 노선이 바뀌면 캐시 초기화
+            if st.session_state.map_cache_route_id != route_id:
+                st.session_state.map_cache = None
+                st.session_state.map_cache_route_id = route_id
+
+            # 캐시 없으면 최초 1회만 조회
+            if st.session_state.map_cache is None:
+                with st.spinner("경로 분석 중..."):
+                    buses=fetch_bus_locations(route_id)
+                    route_stops_list=fetch_route_stops(route_id)
+                st.session_state.map_cache = {'buses': buses, 'route_stops_list': route_stops_list,
+                                              'fetched_at': time.strftime('%H:%M:%S')}
+            else:
+                buses = st.session_state.map_cache['buses']
+                route_stops_list = st.session_state.map_cache['route_stops_list']
+
+            fetched_at = st.session_state.map_cache.get('fetched_at','')
+            st.markdown(f"""<div style="font-size:0.88rem;font-weight:700;color:#7C3AED;margin-bottom:4px;">
+              🗺️ {route_name}번 실시간 경로</div>
+              <div style="font-size:0.72rem;color:#A89BC2;margin-bottom:12px;">
+              📌 조회시각 {fetched_at} &nbsp;·&nbsp; 🔄 지도 갱신 버튼으로 업데이트</div>""",
+              unsafe_allow_html=True)
 
             if not buses or not route_stops_list:
                 st.warning("실시간 정보를 가져올 수 없습니다.")
