@@ -97,17 +97,18 @@ p { color: #3D2B6B !important; }
 }
 .stButton > button:active { transform: translateY(0) !important; }
 
-/* ── 검색 제출 버튼 ── */
+/* ── 검색 제출 버튼 & 내 위치 버튼 공통 ── */
 [data-testid="stFormSubmitButton"] > button {
     background: linear-gradient(135deg, #A78BFA, #EC4899) !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 18px !important;
-    font-size: 0.97rem !important;
+    font-size: 0.92rem !important;
     font-weight: 700 !important;
-    padding: 15px 20px !important;
+    padding: 15px 12px !important;
     box-shadow: 0 6px 20px rgba(167,139,250,0.4) !important;
     letter-spacing: 0.2px !important;
+    width: 100% !important;
 }
 [data-testid="stFormSubmitButton"] > button:hover {
     box-shadow: 0 8px 28px rgba(167,139,250,0.55) !important;
@@ -334,11 +335,14 @@ st.caption(f"🗄️ {db_status}")
 #  검색 폼
 # ══════════════════════════════════════════
 with st.form(key='search_form'):
-    c1, c2 = st.columns([5,1])
+    c1, c2, c3 = st.columns([5, 1, 1])
     with c1:
         place = st.text_input("", key="search_input", placeholder="🔍  정류장명 또는 5자리 번호")
     with c2:
         submit = st.form_submit_button("검색")
+    with c3:
+        gps_click = st.form_submit_button("📍 내 위치")
+
     if submit and st.session_state.search_input:
         with st.spinner("🔍 검색 중..."):
             matches, _ = smart_search_stops(st.session_state.search_input)
@@ -356,9 +360,7 @@ with st.form(key='search_form'):
         else:
             st.session_state.view_mode='no_matches'
 
-gc1, gc2 = st.columns([5,1])
-with gc2:
-    if st.button("📍 내 위치"):
+    if gps_click:
         with st.spinner("📍 위치 확인 중..."):
             loc = get_geolocation()
         if loc and 'coords' in loc:
