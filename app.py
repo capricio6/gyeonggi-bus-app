@@ -10,6 +10,11 @@ import time
 import pandas as pd
 import os
 import glob
+st.set_page_config(
+    page_title="경기버스 실시간",
+    page_icon="icon-32.png",   # ← 이렇게 변경
+    layout="wide"
+)
 
 try:
     api_key = st.secrets.get("API_KEY")
