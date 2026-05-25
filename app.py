@@ -263,34 +263,28 @@ def haversine(la1,lo1,la2,lo2):
     a=math.sin(dp/2)**2+math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
     return R*2*math.atan2(math.sqrt(a),math.sqrt(1-a))
 
-def get_road_route(stops, max_waypoints=50):
-    """OSRM 공개 API로 실제 도로 경로 반환. 실패 시 None 반환."""
-    coords = []
-    for s in stops:
-        lat = float(s.get('y', s.get('stationY', 0)))
-        lon = float(s.get('x', s.get('stationX', 0)))
-        if lat != 0 and lon != 0:
-            coords.append((lat, lon))
-    if len(coords) < 2:
-        return None
-    # 너무 많으면 균등 샘플링 (첫·끝은 반드시 포함)
-    if len(coords) > max_waypoints:
-        step = len(coords) / max_waypoints
-        sampled = [coords[int(i * step)] for i in range(max_waypoints - 1)]
-        sampled.append(coords[-1])
-        coords = sampled
-    coord_str = ";".join(f"{lon},{lat}" for lat, lon in coords)
-    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full&geometries=geojson"
+def fetch_route_line(route_id):
+    """노선형상정보목록조회 - 실제 도로를 따르는 GPS 좌표 목록 반환"""
+    decoded_key = urllib.parse.unquote(api_key)
+    url = "https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteLineListv2"
+    params = {"serviceKey": decoded_key, "routeId": str(route_id), "_type": "json"}
     try:
-        res = requests.get(url, timeout=8)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get('code') == 'Ok':
-                geometry = data['routes'][0]['geometry']['coordinates']
-                return [(lat, lon) for lon, lat in geometry]
+        res = requests.get(url, params=params, timeout=10)
+        if res.status_code != 200: return []
+        data = res.json()
+        if str(data.get('response',{}).get('msgHeader',{}).get('resultCode',99)) != '0': return []
+        items = data.get('response',{}).get('msgBody',{}).get('busRouteLineList',[])
+        if not items: return []
+        items = items if isinstance(items, list) else [items]
+        coords = []
+        for item in items:
+            lat = float(item.get('y', item.get('gpsY', 0)))
+            lon = float(item.get('x', item.get('gpsX', 0)))
+            if lat != 0 and lon != 0:
+                coords.append((lat, lon))
+        return coords
     except:
-        pass
-    return None
+        return []
 
 def simulate_eta_route_based(route_stops_list, bus_seq, target_seq, avg_speed_kmh=20, dwell_sec=20):
     seg=[s for s in route_stops_list if bus_seq<=int(s.get('stationSeq',0))<=target_seq]
@@ -657,26 +651,47 @@ elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
                             m=folium.Map(location=[ctr_lat,ctr_lon],zoom_start=14,tiles='CartoDB positron')
                             route_coords=[(float(s.get('y',s.get('stationY',0))),float(s.get('x',s.get('stationX',0)))) for s in route_stops_list]
 
-                            # 전체 노선: 도로 기반 경로 시도
-                            road_route = get_road_route(route_stops_list)
-                            if road_route:
-                                folium.PolyLine(road_route,color='#DDD6FE',weight=3,opacity=0.6).add_to(m)
+                            # 노선 형상정보 (실제 도로 경로) - 캐시에 없으면 조회
+                            cache = st.session_state.map_cache
+                            if 'route_line' not in cache:
+                                cache['route_line'] = fetch_route_line(route_id)
+                                st.session_state.map_cache = cache
+                            route_line = cache['route_line']
+
+                            # 전체 노선 그리기
+                            if route_line and len(route_line) > 1:
+                                folium.PolyLine(route_line, color='#DDD6FE', weight=3, opacity=0.6).add_to(m)
                             else:
-                                folium.PolyLine(route_coords,color='#DDD6FE',weight=3,opacity=0.6,dash_array='6,5').add_to(m)
+                                folium.PolyLine(route_coords, color='#DDD6FE', weight=3, opacity=0.6, dash_array='6,5').add_to(m)
 
-                            # 1번차 구간: 도로 기반
-                            if seg1:
-                                seg1_stops=[s for s in route_stops_list if bus1['seq']<=int(s.get('stationSeq',0))<=target_seq]
-                                seg1_stops.sort(key=lambda x:int(x.get('stationSeq',0)))
-                                road_seg1 = get_road_route(seg1_stops)
-                                folium.PolyLine(road_seg1 if road_seg1 else seg1,color='#7C3AED',weight=6,opacity=0.9).add_to(m)
+                            # 형상정보에서 구간 추출 함수
+                            def clip_line_between(line, from_lat, from_lon, to_lat, to_lon):
+                                """line 좌표 중 from 지점 ~ to 지점 사이만 잘라서 반환"""
+                                if not line: return []
+                                def nearest_idx(target_lat, target_lon):
+                                    best, best_d = 0, float('inf')
+                                    for i,(la,lo) in enumerate(line):
+                                        d=(la-target_lat)**2+(lo-target_lon)**2
+                                        if d<best_d: best_d=d; best=i
+                                    return best
+                                i1 = nearest_idx(from_lat, from_lon)
+                                i2 = nearest_idx(to_lat, to_lon)
+                                if i1 > i2: i1, i2 = i2, i1
+                                return line[i1:i2+1]
 
-                            # 2번차 구간: 도로 기반
-                            if seg2 and bus2:
-                                seg2_stops=[s for s in route_stops_list if bus2['seq']<=int(s.get('stationSeq',0))<=target_seq]
-                                seg2_stops.sort(key=lambda x:int(x.get('stationSeq',0)))
-                                road_seg2 = get_road_route(seg2_stops)
-                                folium.PolyLine(road_seg2 if road_seg2 else seg2,color='#F472B6',weight=5,opacity=0.7).add_to(m)
+                            # 1번차 구간 (보라)
+                            if route_line and bus1:
+                                seg1_line = clip_line_between(route_line, bus1['lat'], bus1['lon'], target_lat, target_lon)
+                                folium.PolyLine(seg1_line if len(seg1_line)>1 else seg1, color='#7C3AED', weight=6, opacity=0.9).add_to(m)
+                            elif seg1:
+                                folium.PolyLine(seg1, color='#7C3AED', weight=6, opacity=0.9).add_to(m)
+
+                            # 2번차 구간 (핑크)
+                            if route_line and bus2:
+                                seg2_line = clip_line_between(route_line, bus2['lat'], bus2['lon'], target_lat, target_lon)
+                                folium.PolyLine(seg2_line if len(seg2_line)>1 else seg2, color='#F472B6', weight=5, opacity=0.7).add_to(m)
+                            elif seg2:
+                                folium.PolyLine(seg2, color='#F472B6', weight=5, opacity=0.7).add_to(m)
 
                             # 노선 전체 정류소 원형 마커
                             for s in route_stops_list:
