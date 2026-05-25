@@ -631,6 +631,40 @@ elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
                             if seg1: folium.PolyLine(seg1,color='#7C3AED',weight=6,opacity=0.9).add_to(m)
                             if seg2: folium.PolyLine(seg2,color='#F472B6',weight=5,opacity=0.7).add_to(m)
 
+                            # 노선 전체 정류소 원형 마커
+                            for s in route_stops_list:
+                                slat=float(s.get('y',s.get('stationY',0)))
+                                slon=float(s.get('x',s.get('stationX',0)))
+                                sname=s.get('stationName',s.get('name','정류소'))
+                                sseq=int(s.get('stationSeq',0))
+                                if slat==0 and slon==0: continue
+                                is_target = str(s.get('stationId'))==str(sel['id'])
+                                is_in_seg1 = bus1 and bus1['seq'] <= sseq <= target_seq
+                                is_in_seg2 = bus2 and bus2['seq'] <= sseq <= target_seq
+                                if is_target:
+                                    pass  # 별도 마커로 처리
+                                elif is_in_seg1:
+                                    folium.CircleMarker(
+                                        [slat,slon], radius=5,
+                                        color='#7C3AED', fill=True, fill_color='#EDE9FE', fill_opacity=1, weight=2,
+                                        popup=folium.Popup(f"<b>{sname}</b><br>순서: {sseq}번", max_width=160),
+                                        tooltip=sname
+                                    ).add_to(m)
+                                elif is_in_seg2:
+                                    folium.CircleMarker(
+                                        [slat,slon], radius=5,
+                                        color='#EC4899', fill=True, fill_color='#FCE7F3', fill_opacity=1, weight=2,
+                                        popup=folium.Popup(f"<b>{sname}</b><br>순서: {sseq}번", max_width=160),
+                                        tooltip=sname
+                                    ).add_to(m)
+                                else:
+                                    folium.CircleMarker(
+                                        [slat,slon], radius=4,
+                                        color='#C4B5FD', fill=True, fill_color='#F5F3FF', fill_opacity=0.9, weight=1.5,
+                                        popup=folium.Popup(f"<b>{sname}</b><br>순서: {sseq}번", max_width=160),
+                                        tooltip=sname
+                                    ).add_to(m)
+
                             # 1번차 마커 (보라)
                             folium.Marker([bus1['lat'],bus1['lon']],
                                 popup=folium.Popup(f"<b>🚌 1번차 · {route_name}번</b><br>약 {sim1}분 후 도착",max_width=200),
