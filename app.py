@@ -7,6 +7,7 @@ from streamlit_js_eval import get_geolocation
 import urllib.parse
 import math
 import time
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 import os
 import glob
@@ -175,6 +176,10 @@ defaults = {
 }
 for k, v in defaults.items():
     if k not in st.session_state: st.session_state[k] = v
+
+def kst_now(fmt='%H:%M:%S'):
+    KST = timezone(timedelta(hours=9))
+    return datetime.now(KST).strftime(fmt)
 
 @st.cache_data
 def load_gyeonggi_stops_csv():
@@ -504,7 +509,7 @@ elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
             st.rerun()
 
     # 정류소 카드
-    upd = time.strftime('%H:%M:%S', time.localtime(st.session_state.last_update))
+    upd = kst_now()
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,rgba(167,139,250,0.15),rgba(236,72,153,0.08));
                 border:1.5px solid rgba(167,139,250,0.3); border-radius:24px;
@@ -569,7 +574,7 @@ elif st.session_state.view_mode=='detail' and st.session_state.selected_stop:
                     buses=fetch_bus_locations(route_id)
                     route_stops_list=fetch_route_stops(route_id)
                 st.session_state.map_cache = {'buses': buses, 'route_stops_list': route_stops_list,
-                                              'fetched_at': time.strftime('%H:%M:%S')}
+                                              'fetched_at': kst_now()}
             else:
                 buses = st.session_state.map_cache['buses']
                 route_stops_list = st.session_state.map_cache['route_stops_list']
