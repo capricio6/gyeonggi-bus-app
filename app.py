@@ -295,10 +295,12 @@ def smart_search_stops(query):
                 loc=geo.geocode(qq,language='ko')
                 if loc: return [{'id':'ADDR','name':qq,'lat':loc.latitude,'lon':loc.longitude,'ars':'','is_addr':True}],db_status
             except: pass
-    seen,out=[],set()
+    seen, out = set(), []
     for r in results:
-        k=(round(r['lat'],5),round(r['lon'],5))
-        if k not in seen: seen.append(k); out.append(r)
+        k = (round(r['lat'],5), round(r['lon'],5))
+        if k not in seen:
+            seen.add(k)
+            out.append(r)
     return out, db_status
 
 def run_search_around(lat, lon, mode, place_name=""):
