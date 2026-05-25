@@ -534,44 +534,105 @@ elif st.session_state.view_mode == 'detail' and st.session_state.selected_stop:
                         target_seq = int(target_stop.get('stationSeq', 0))
                         target_lat = float(target_stop.get('stationY', target_stop.get('y', 0)))
                         target_lon = float(target_stop.get('stationX', target_stop.get('x', 0)))
-                        best_bus, min_diff = None, 9999
+                        # 1번차, 2번차 모두 찾기
+                        candidates = []
                         for bus in buses:
                             bus_station_id = bus.get('stationId')
                             bus_stop_data = next((s for s in route_stops_list if str(s.get('stationId')) == str(bus_station_id)), None)
                             if bus_stop_data:
                                 bus_seq = int(bus_stop_data.get('stationSeq', 0))
                                 diff = target_seq - bus_seq
-                                if 0 < diff < min_diff:
-                                    min_diff = diff
-                                    best_bus = bus
-                                    best_bus_seq = bus_seq
-                                    best_bus_lat = float(bus_stop_data.get('stationY', bus_stop_data.get('y', 0)))
-                                    best_bus_lon = float(bus_stop_data.get('stationX', bus_stop_data.get('x', 0)))
-                        if best_bus:
-                            sim_min, road_dist_m, est_stops, segment_coords = simulate_eta_route_based(route_stops_list, best_bus_seq, target_seq)
+                                if 0 < diff:
+                                    candidates.append({
+                                        'bus': bus,
+                                        'seq': bus_seq,
+                                        'diff': diff,
+                                        'lat': float(bus_stop_data.get('stationY', bus_stop_data.get('y', 0))),
+                                        'lon': float(bus_stop_data.get('stationX', bus_stop_data.get('x', 0))),
+                                    })
+                        candidates.sort(key=lambda x: x['diff'])
+                        bus1 = candidates[0] if len(candidates) >= 1 else None
+                        bus2 = candidates[1] if len(candidates) >= 2 else None
+
+                        if bus1:
+                            sim_min, road_dist_m, est_stops, segment_coords = simulate_eta_route_based(route_stops_list, bus1['seq'], target_seq)
                             if road_dist_m > 150000 or est_stops > 50 or sim_min > 120:
                                 st.info("🚌 먼 거리 운행 중이거나 위치 정보가 불안정합니다.")
                             else:
                                 route_coords = [(float(s.get('y', s.get('stationY', 0))), float(s.get('stationX', s.get('stationX', 0)))) for s in route_stops_list]
-                                center_lat = (best_bus_lat + target_lat) / 2
-                                center_lon = (best_bus_lon + target_lon) / 2
-                                m_detail = folium.Map(location=[center_lat, center_lon], zoom_start=16,
+
+                                # 지도 중심: 1번차~정류소 범위
+                                lats = [bus1['lat'], target_lat]
+                                lons = [bus1['lon'], target_lon]
+                                if bus2:
+                                    lats.append(bus2['lat'])
+                                    lons.append(bus2['lon'])
+                                center_lat = (min(lats) + max(lats)) / 2
+                                center_lon = (min(lons) + max(lons)) / 2
+
+                                m_detail = folium.Map(location=[center_lat, center_lon], zoom_start=14,
                                                       tiles='CartoDB positron')
-                                folium.PolyLine(route_coords, color='#CBD0F0', weight=3, opacity=0.6, dash_array='6,4').add_to(m_detail)
+
+                                # 전체 노선 (회색 점선)
+                                folium.PolyLine(route_coords, color='#CBD0F0', weight=3, opacity=0.5, dash_array='6,4').add_to(m_detail)
+
+                                # 1번차 → 정류소 구간 (파란 실선)
                                 if segment_coords:
                                     folium.PolyLine(segment_coords, color='#4B6BF5', weight=6, opacity=0.95).add_to(m_detail)
-                                folium.Marker([best_bus_lat, best_bus_lon],
-                                              popup=f"{route_name}번 현재 위치",
-                                              icon=folium.Icon(color='red', icon='bus', prefix='fa')).add_to(m_detail)
-                                folium.Marker([target_lat, target_lon],
-                                              popup=f"도착: {sel['name']}",
-                                              icon=folium.Icon(color='blue', icon='star', prefix='fa')).add_to(m_detail)
-                                st_folium(m_detail, width=None, height=420)
+
+                                # 2번차 → 정류소 구간 (주황 실선)
+                                if bus2:
+                                    _, _, _, seg2_coords = simulate_eta_route_based(route_stops_list, bus2['seq'], target_seq)
+                                    if seg2_coords:
+                                        folium.PolyLine(seg2_coords, color='#F5A623', weight=5, opacity=0.75).add_to(m_detail)
+
+                                # 마커: 1번차 (빨강)
+                                folium.Marker(
+                                    [bus1['lat'], bus1['lon']],
+                                    popup=folium.Popup(f"<b>🚌 1번차 · {route_name}번</b><br>약 {sim_min}분 후 도착", max_width=200),
+                                    tooltip=f"1번차 · {sim_min}분",
+                                    icon=folium.Icon(color='red', icon='bus', prefix='fa')
+                                ).add_to(m_detail)
+
+                                # 마커: 2번차 (주황)
+                                if bus2:
+                                    sim2_min, _, est2_stops, _ = simulate_eta_route_based(route_stops_list, bus2['seq'], target_seq)
+                                    folium.Marker(
+                                        [bus2['lat'], bus2['lon']],
+                                        popup=folium.Popup(f"<b>🚌 2번차 · {route_name}번</b><br>약 {sim2_min}분 후 도착", max_width=200),
+                                        tooltip=f"2번차 · {sim2_min}분",
+                                        icon=folium.DivIcon(
+                                            html=f'''<div style="background:#F5A623;color:white;font-weight:700;
+                                                        font-size:11px;padding:4px 7px;border-radius:20px;
+                                                        white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.25);">
+                                                        🚌 2번차</div>''',
+                                            icon_size=(70, 28), icon_anchor=(35, 14)
+                                        )
+                                    ).add_to(m_detail)
+
+                                # 마커: 내 정류소 (파랑 별)
+                                folium.Marker(
+                                    [target_lat, target_lon],
+                                    popup=folium.Popup(f"<b>📍 {sel['name']}</b>", max_width=200),
+                                    tooltip=sel['name'],
+                                    icon=folium.Icon(color='blue', icon='star', prefix='fa')
+                                ).add_to(m_detail)
+
+                                st_folium(m_detail, width=None, height=440)
                                 st.markdown("<hr>", unsafe_allow_html=True)
-                                c1, c2, c3 = st.columns(3)
-                                with c1: st.metric("노선", f"{route_name}번")
-                                with c2: st.metric("남은 정류소", f"{est_stops}개")
-                                with c3: st.metric("예상 도착", f"{sim_min}분 후")
+
+                                # 메트릭 카드
+                                if bus2:
+                                    c1, c2, c3, c4 = st.columns(4)
+                                    with c1: st.metric("노선", f"{route_name}번")
+                                    with c2: st.metric("🔴 1번차 도착", f"{sim_min}분 후")
+                                    with c3: st.metric("🟠 2번차 도착", f"{sim2_min}분 후")
+                                    with c4: st.metric("남은 정류소", f"{est_stops}개")
+                                else:
+                                    c1, c2, c3 = st.columns(3)
+                                    with c1: st.metric("노선", f"{route_name}번")
+                                    with c2: st.metric("남은 정류소", f"{est_stops}개")
+                                    with c3: st.metric("예상 도착", f"{sim_min}분 후")
                         else:
                             st.info("🚌 해당 노선 버스가 반대 방향이거나 운행 중이 아닙니다.")
 
